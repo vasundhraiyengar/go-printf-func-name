@@ -1,4 +1,5 @@
 package p
+import log 
 
 func notPrintfFuncAtAll() {}
 
@@ -28,3 +29,5 @@ func prinfLikeFunc(format string, args ...interface{}) {} // want "printf-like f
 func prinfLikeFuncWithExtraArgs1(extraArg, format string, args ...interface{}) {} // want "printf-like formatting function"
 
 func prinfLikeFuncWithExtraArgs2(extraArg int, format string, args ...interface{}) {} // want "printf-like formatting function"
+
+log.log()

@@ -2,7 +2,6 @@ package analyzer
 
 import (
 	"go/ast"
-	"strings"
 
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
@@ -20,55 +19,40 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
-		(*ast.FuncDecl)(nil),
+		(*ast.CallExpr)(nil),
 	}
 
 	inspector.Preorder(nodeFilter, func(node ast.Node) {
-		funcDecl := node.(*ast.FuncDecl)
+		ce := node.(*ast.CallExpr)
 
-		if res := funcDecl.Type.Results; res != nil && len(res.List) != 0 {
+		isLog := isPkgDot(ce.Fun, "log", "Log")
+		isLogWith := isPkgDot(ce.Fun, "log", "With")
+		if !(isLog || isLogWith) || len(ce.Args) != 1 {
 			return
 		}
 
-		params := funcDecl.Type.Params.List
-		if len(params) < 2 { // [0] must be format (string), [1] must be args (...interface{})
+		params := ce.Args
+		if isLog && len(params)%2 == 0 {
 			return
 		}
 
-		formatParamType, ok := params[len(params)-2].Type.(*ast.Ident)
-		if !ok { // first param type isn't identificator so it can't be of type "string"
+		if isLogWith && len(params)%2 != 0 {
 			return
 		}
 
-		if formatParamType.Name != "string" { // first param (format) type is not string
-			return
-		}
+		pass.Reportf(node.Pos(), "need right number of args")
 
-		if formatParamNames := params[len(params)-2].Names; len(formatParamNames) == 0 || formatParamNames[len(formatParamNames)-1].Name != "format" {
-			return
-		}
-
-		argsParamType, ok := params[len(params)-1].Type.(*ast.Ellipsis)
-		if !ok { // args are not ellipsis (...args)
-			return
-		}
-
-		elementType, ok := argsParamType.Elt.(*ast.InterfaceType)
-		if !ok { // args are not of interface type, but we need interface{}
-			return
-		}
-
-		if elementType.Methods != nil && len(elementType.Methods.List) != 0 {
-			return // has >= 1 method in interface, but we need an empty interface "interface{}"
-		}
-
-		if strings.HasSuffix(funcDecl.Name.Name, "f") {
-			return
-		}
-
-		pass.Reportf(node.Pos(), "printf-like formatting function '%s' should be named '%sf'",
-			funcDecl.Name.Name, funcDecl.Name.Name)
 	})
 
 	return nil, nil
+}
+
+func isPkgDot(expr ast.Expr, pkg, name string) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	return ok && isIdent(sel.X, pkg) && isIdent(sel.Sel, name)
+}
+
+func isIdent(expr ast.Expr, ident string) bool {
+	id, ok := expr.(*ast.Ident)
+	return ok && id.Name == ident
 }
